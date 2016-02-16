@@ -28,6 +28,7 @@ function Get-privilegedUserReport
     Begin
     {
     }
+
     Process
     {
     }
@@ -38,7 +39,7 @@ function Get-privilegedUserReport
 
 <#
 .Synopsis
-   Short description
+   Gets Active Direction Users which are not in use.
 .DESCRIPTION
    Long description
 .EXAMPLE
