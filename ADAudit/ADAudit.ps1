@@ -39,7 +39,7 @@ function Get-privilegedUserReport
 
 <#
 .Synopsis
-   Gets Active Direction Users which are not in use.
+   Short description
 .DESCRIPTION
    Long description
 .EXAMPLE
@@ -47,31 +47,67 @@ function Get-privilegedUserReport
 .EXAMPLE
    Another example of how to use this cmdlet
 #>
-function Get-StaleUserReport
+
+function Get-StaleADAccounts
 {
     [CmdletBinding()]
+    [Alias()]
     [OutputType([int])]
     Param
     (
-        # Param1 help description
+        # Domain Controller to use
         [Parameter(Mandatory=$true,
                    ValueFromPipelineByPropertyName=$true,
                    Position=0)]
-        $Param1,
-
-        # Param2 help description
-        [int]
-        $Param2
+        $dc,
+        
+        # Number of inactive days
+        [Parameter(Mandatory=$false,
+                   ValueFromPipelineByPropertyName=$true,
+                   Position=1)]
+        $inactivedays = 180
     )
 
     Begin
     {
+        $staleusers = $null
+        $staleusers = @()
+        $now = Get-Date
+        $inactivedate = $now.AddDays($inactivedays *-1)
+
+        Get-ADSession -domainController $dc
+
     }
     Process
     {
+        $inactiveaccountlist = Search-RMADAccount -AccountInactive -DateTime $inactivedate -usersonly
+        ForEach ($inactiveaccount in $inactiveaccountlist) {
+            $linemanager = $null
+            $startdate = $null
+            $lastlogon = $null
+            $currentuser = $null
+            $currentuser = Get-RMaduser -Identity $inactiveaccount.SamAccountName -Properties employeeType, employeeID, manager, LastLogonTimestamp, displayName, title, l, department, manager, globalradioStartDate, department
+            If ($currentuser.employeeID -ne $null -And [DateTime]::FromFileTime($currentuser.globalradioStartDate) -lt $inactivedate) {
+                If($currentuser.globalradioStartDate -ne $Null){
+                    $startdate = [DateTime]::FromFileTime($currentuser.globalradioStartDate).ToString("dd/MM/yyyy")
+                } else {
+                    $startdate = "No Start Date Found"
+                }
+                If($currentuser.LastLogonTimestamp -ne $Null){
+                    $lastlogon = [DateTime]::FromFileTime($currentuser.LastLogonTimestamp)
+                } else {
+                    $lastlogon = "Never Logged On"
+                }
+                $linemanager = Get-LineManager -user $inactiveaccount.SamAccountName
+                $staleusers += [pscustomobject]@{"Name" = $currentuser.displayName; "Job Title" = $currentuser.title; "Staff Number" = $currentuser.employeeID;"Line Manager" = $linemanager.name; "Location" = $currentuser.l; "Department" = $currentuser.Department; "Start Date" = $startdate; "Last Logon" = $lastlogon}
+            }
+        }
+
+        Send-ReportEmail -bodydata $staleusers -bodytext "The following staff have not used their account in the past $inactivedays days" -SmtpServer "smtpinternal.thisisglobal.com" -FromEmailAddress "soc@thisisglobal.com" -ToEmailAddress "richard.carpenter@thisisglobal.com" -EmailSubject "AD Audit - Stale Users"
     }
     End
     {
+        Remove-ADSession -domainController $dc
     }
 }
 
