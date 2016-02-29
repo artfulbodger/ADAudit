@@ -102,8 +102,16 @@ function Get-StaleADAccounts
                 $staleusers += [pscustomobject]@{"Name" = $currentuser.displayName; "Job Title" = $currentuser.title; "Staff Number" = $currentuser.employeeID;"Line Manager" = $linemanager.name; "Location" = $currentuser.l; "Department" = $currentuser.Department; "Start Date" = $startdate; "Last Logon" = $lastlogon}
             }
         }
+        
+        Try
+        {
+            Send-ReportEmail -bodydata $staleusers -bodytext "The following staff have not used their account in the past $inactivedays days" -SmtpServer "smtpinternal2.thisisglobal.com" -FromEmailAddress "soc@thisisglobal.com" -ToEmailAddress "richard.carpenter@thisisglobal.com" -EmailSubject "AD Audit - Stale Users"
+        }
+        Catch [Microsoft.PowerShell.Commands.SendMailMessage]
+        {
 
-        Send-ReportEmail -bodydata $staleusers -bodytext "The following staff have not used their account in the past $inactivedays days" -SmtpServer "smtpinternal.thisisglobal.com" -FromEmailAddress "soc@thisisglobal.com" -ToEmailAddress "richard.carpenter@thisisglobal.com" -EmailSubject "AD Audit - Stale Users"
+        }
+
     }
     End
     {
