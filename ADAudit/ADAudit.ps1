@@ -39,13 +39,11 @@ function Get-privilegedUserReport
 
 <#
 .Synopsis
-   Short description
-.DESCRIPTION
-   Long description
+   Compiles a list of AD Accounts which have not logged on during the inactive days value
 .EXAMPLE
-   Example of how to use this cmdlet
+   Get-StaleADAccounts -dc "dc1.contoso.com"
 .EXAMPLE
-   Another example of how to use this cmdlet
+   Get-StaleADAccounts -dc "dc1.contoso.com" -inactivedays 90
 #>
 
 function Get-StaleADAccounts
@@ -98,7 +96,7 @@ function Get-StaleADAccounts
                 } else {
                     $lastlogon = "Never Logged On"
                 }
-                $linemanager = Get-LineManager -user $inactiveaccount.SamAccountName
+                $linemanager = Get-LineManager -user $inactiveaccount.SamAccountName -dc $dc
                 $staleusers += [pscustomobject]@{"Name" = $currentuser.displayName; "Job Title" = $currentuser.title; "Staff Number" = $currentuser.employeeID;"Line Manager" = $linemanager.name; "Location" = $currentuser.l; "Department" = $currentuser.Department; "Start Date" = $startdate; "Last Logon" = $lastlogon}
             }
         }
@@ -108,6 +106,69 @@ function Get-StaleADAccounts
             Send-ReportEmail -bodydata $staleusers -bodytext "The following staff have not used their account in the past $inactivedays days" -SmtpServer "smtpinternal2.thisisglobal.com" -FromEmailAddress "soc@thisisglobal.com" -ToEmailAddress "richard.carpenter@thisisglobal.com" -EmailSubject "AD Audit - Stale Users"
         }
         Catch [Microsoft.PowerShell.Commands.SendMailMessage]
+        {
+
+        }
+
+    }
+    End
+    {
+        Remove-ADSession -domainController $dc
+    }
+}
+
+<#
+.Synopsis
+   Compiles a list of AD Accounts with Password set to Never Expire
+.DESCRIPTION
+   Long description
+.EXAMPLE
+   Get-PasswordNeverExpires -dc "dc1.contoso.com"
+#>
+function Get-PasswordNeverExpires
+{
+    [CmdletBinding()]
+    [Alias()]
+    [OutputType([int])]
+    Param
+    (
+       # Domain Controller to use
+        [Parameter(Mandatory=$true,
+                   ValueFromPipelineByPropertyName=$true,
+                   Position=0)]
+        $dc
+    )
+
+    Begin
+    {
+        Get-ADSession -domainController $dc
+        $failedaudit = @()
+    }
+    Process
+    {
+        $PasswordAccountList = Search-RMADAccount -PasswordNeverExpires -UsersOnly
+        $usercount = $PasswordAccountList.count
+        
+        Write-Verbose "Discovered $usercount AD Accounts with password set to Never Expire"
+                
+        foreach ($user in $PasswordAccountList) {
+            $currentuser = Get-RMADUser -Identity $user.samAccountName -Properties employeeType, manager, mail, l, pwdLastSet
+            If (($currentuser.employeeType -ne "Generic Account") -and ($currentuser.employeeType -ne "Resource - Room") -and ($currentuser.employeeType -ne "Resource - Shared Mailbox") -and ($currentuser.employeeType -ne "Resource - Equipment") -and ($currentuser.employeeType -ne "Resource - Shared Calendar")   -and ($currentuser.employeeType -ne "Service") -and ($currentuser.employeeType -ne "Service Account") -and ($currentuser.employeeType -ne "iPad WiFi User") -and ($currentuser.employeeType) -and ($currentuser.employeeType -ne "CUCM User")) {
+                If ($currentuser.manager) {
+                    $LineManager = Get-LineManager -user $currentuser.manager -dc $dc
+                    $usercheck = [pscustomobject]@{"DisplayName" = $currentuser.Name; "Employee Type" = $currentuser.employeeType; "Line Manager" = $linemanager.name; "Email" = $currentuser.mail; "Location" = $currentuser.l; "Password Last Changed" = [DateTime]::FromFileTimeutc($currentuser.pwdLastSet)}
+                } else {
+                    $usercheck = [pscustomobject]@{"DisplayName" = $currentuser.Name; "Employee Type" = $currentuser.employeeType; "Line Manager" = ""; "Email" = $currentuser.mail; "Location" = $currentuser.l; "Password Last Changed" = [DateTime]::FromFileTimeutc($currentuser.pwdLastSet)}
+                }
+                $failedaudit += $usercheck
+            }
+        }
+
+        Try
+        {
+            Send-ReportEmail -bodydata $failedaudit -bodytext "The following accounts currently are set with 'Passwords that never expire'." -SmtpServer "smtpinternal2.thisisglobal.com" -FromEmailAddress "soc@thisisglobal.com" -ToEmailAddress "richard.carpenter@thisisglobal.com" -EmailSubject "AD Audit - Passwords never Expire"
+        }
+        Catch
         {
 
         }
@@ -129,12 +190,18 @@ function Get-LineManager
         [Parameter(Mandatory=$true,
                    ValueFromPipelineByPropertyName=$true,
                    Position=0)]
-        $user
+        $user,
+
+        # Domain Controller to use
+        [Parameter(Mandatory=$true,
+                   ValueFromPipelineByPropertyName=$true,
+                   Position=1)]
+        $dc
     )
 
     Begin
     {
-        Get-ADSession -domainController 'dsdc2.thisisglobal.com'
+        Get-ADSession -domainController $dc
     }
     Process
     {
@@ -308,13 +375,7 @@ function Send-ReportEmail
     }
     Process
     {
-        
-
-        $bodydatahtml = $bodydata | ConvertTo-Html -Head $style
-
-        $body = "<p>$bodytext</p><p>$bodydatahtml</p>"
-        #$body += $bodydatahtml
-
+        $body = $bodydata | ConvertTo-Html -Head $style -PreContent "<p>$bodytext</p>"
         Send-MailMessage -SmtpServer $SmtpServer -From $FromEmailAddress -to $ToEmailAddress -Subject $EmailSubject -BodyAsHtml -Body "$body"
     }
     End
