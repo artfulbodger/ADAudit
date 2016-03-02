@@ -1,12 +1,4 @@
-<#
-.Synopsis
-   Short description
-.DESCRIPTION
-   Long description
-.EXAMPLE
-   Example of how to use this cmdlet
-.EXAMPLE
-   Another example of how to use this cmdlet
+
 #>
 function Get-privilegedUserReport
 {
@@ -217,7 +209,6 @@ function Get-ADSchemaVersions
             56="Windows Server 2012 RTM"; 
             69="Windows Server 2012 R2" 
         }
-
         $SchemaHashExchange = @{ 
             4397="Exchange Server 2000 RTM"; 
             4406="Exchange Server 2000 SP3"; 
@@ -233,47 +224,49 @@ function Get-ADSchemaVersions
             14734="Exchange 2010 SP3"; 
             15137="Exchange 2013 RTM";
             15292="Exchange 2013 SP1"
-        } 
+        }
+        $SchemaHashLync = @{ 
+            1006="LCS 2005"; 
+            1007="OCS 2007 R1"; 
+            1008="OCS 2007 R2"; 
+            1100="Lync Server 2010"; 
+            1150="Lync Server 2013" 
+        }
     }
     Process
     {
         $SchemaPartition = (Get-RMADRootDSE).NamingContexts | Where-Object {$_ -like "*Schema*"} 
-        $SchemaVersionAD = (Get-RMADObject $SchemaPartition -Property objectVersion).objectVersion 
-        $SchemaVersions += 1 | Select-Object @{name="Product";expression={"AD"}}, @{name="Schema";expression={$SchemaVersionAD}}, @{name="Version";expression={$SchemaHashAD.Item($SchemaVersionAD)}} 
+        $SchemaVersionAD = (Get-RMADObject $SchemaPartition -Property objectVersion).objectVersion
+        $SchemaVersionADDate = (Get-RMADObject $SchemaPartition -Property whenCreated).whenCreated
+        $SchemaVersions += 1 | Select-Object @{name="Product";expression={"Active Directory"}}, @{name="Schema";expression={$SchemaVersionAD}}, @{name="Version";expression={$SchemaHashAD.Item($SchemaVersionAD)}}, @{name="Date";expression={$SchemaVersionADDate}}
         
         $SchemaPathExchange = "CN=ms-Exch-Schema-Version-Pt,$SchemaPartition" 
-        #If (Test-Path "AD:$SchemaPathExchange") { 
-            $SchemaVersionExchange = (Get-RMADObject $SchemaPathExchange -Property rangeUpper).rangeUpper 
-        #} Else { 
-        #    $SchemaVersionExchange = 0 
-        #} 
-        $SchemaVersions += 1 | Select-Object @{name="Product";expression={"Exchange"}}, @{name="Schema";expression={$SchemaVersionExchange}}, @{name="Version";expression={$SchemaHashExchange.Item($SchemaVersionExchange)}} 
+        If (Get-RMADObject $SchemaPathExchange) {
+            $SchemaVersionExchange = (Get-RMADObject $SchemaPathExchange -Property rangeUpper).rangeUpper
+            $SchemaVersionExchangeDate = (Get-RMADObject $SchemaPathExchange -Property whenChanged).whenChanged
+        } Else { 
+            $SchemaVersionExchange = 0 
+        } 
+        $SchemaVersions += 1 | Select-Object @{name="Product";expression={"Exchange"}}, @{name="Schema";expression={$SchemaVersionExchange}}, @{name="Version";expression={$SchemaHashExchange.Item($SchemaVersionExchange)}}, @{name="Date";expression={$SchemaVersionExchangeDate}}
         
-
-        $SchemaHashLync = @{ 
-    1006="LCS 2005"; 
-    1007="OCS 2007 R1"; 
-    1008="OCS 2007 R2"; 
-    1100="Lync Server 2010"; 
-    1150="Lync Server 2013" 
-    } 
- 
-$SchemaPathLync = "CN=ms-RTC-SIP-SchemaVersion,$SchemaPartition" 
-If (Test-Path "AD:$SchemaPathLync") { 
-    $SchemaVersionLync = (Get-ADObject $SchemaPathLync -Property rangeUpper).rangeUpper 
-} Else { 
-    $SchemaVersionLync = 0 
-} 
- 
-$SchemaVersions += 1 | Select-Object @{name="Product";expression={"Lync"}}, @{name="Schema";expression={$SchemaVersionLync}}, @{name="Version";expression={$SchemaHashLync.Item($SchemaVersionLync)}} 
- 
-
-
-
-        $SchemaVersions | Format-Table * -AutoSize 
+        $SchemaPathLync = "CN=ms-RTC-SIP-SchemaVersion,$SchemaPartition" 
+        If (Get-RMADobject $SchemaPathLync) { 
+            $SchemaVersionLync = (Get-RMADObject $SchemaPathLync -Property rangeUpper).rangeUpper
+            $schemaVersionLyncDate = (Get-RMADObject $SchemaPathLync -Property whenChanged).whenChanged
+        } Else { 
+            $SchemaVersionLync = 0 
+        }
+        $SchemaVersions += 1 | Select-Object @{name="Product";expression={"Lync"}}, @{name="Schema";expression={$SchemaVersionLync}}, @{name="Version";expression={$SchemaHashLync.Item($SchemaVersionLync)}}, @{name="Date";expression={$schemaVersionLyncDate}}
     }
     End
     {
+        If ($schemaversions.count -ge 1) {
+            #We have Schema data to send
+            Send-ReportEmail -bodydata $schemaversions -bodytext "Please find detailed below the Schema summary for your domain" -SmtpServer "smtpinternal2.thisisglobal.com" -FromEmailAddress "soc@thisisglobal.com" -ToEmailAddress "richard.carpenter@thisisglobal.com" -EmailSubject "Active Directory Schema Summary Report"
+        } else {
+            # We dont have any Schema Data
+            Send-ReportEmail -bodytext "We were unable to discover any Schema Data this time" -SmtpServer "smtpinternal2.thisisglobal.com" -FromEmailAddress "soc@thisisglobal.com" -ToEmailAddress "richard.carpenter@thisisglobal.com" -EmailSubject "Active Directory Schema Summary Report"
+        }
         Remove-ADSession -domainController $dc
     }
 }
