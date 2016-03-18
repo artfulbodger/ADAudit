@@ -256,4 +256,4 @@ Foreach ($privGroup in $forestPrivGroups)
     }
 } 
 
-Send-MailMessage -SmtpServer "smtpinternal.thisisglobal.com" -From "adaudit@thisisglobal.com" -to "richard.carpenter@thisisglobal.com" -Subject "Audit - Priviledged Users" -BodyAsHtml "$messagebody"
+Send-MailMessage -SmtpServer "smtpinternal2.thisisglobal.com" -From "adaudit@thisisglobal.com" -to "richard.carpenter@thisisglobal.com" -Subject "Audit - Priviledged Users" -BodyAsHtml "$messagebody"
